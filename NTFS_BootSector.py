@@ -85,8 +85,7 @@ def read_vbr(drive_id, partition_start_sector):
             # Read the VBR data
             vbr_data = f.read(512)
             
-            #Print VBR Info
-            print_VBR_info(vbr_data)
+            return vbr_data
 
     except FileNotFoundError:
         print(f"Error: Drive identifier PHYSICALDRIVE{drive_id} not found.")
@@ -100,7 +99,8 @@ first_sector = read_MBR(drive_id)
 print("First sector: ", first_sector)
 
 # Print VBR
-read_vbr(drive_id, first_sector)
+vbr_data = read_vbr(drive_id, first_sector)
+print_VBR_info(vbr_data)
 
 #Get mft cluster number
 print("\nMFT cluster number: ", mft_cluster)
