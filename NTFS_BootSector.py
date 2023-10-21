@@ -4,7 +4,7 @@ mft_cluster = None
         
 def read_MBR(drive_id):
     try:
-        path = r"\\.\PHYSICALDRIVE" + drive_id
+        path = r'\\.\\' + drive_id
 
         with open(path, 'rb') as f:
             mbr_data = f.read(512)  # Read the first 512 bytes (MBR size)
@@ -76,7 +76,7 @@ def print_VBR_info(vbr_data):
 def read_vbr(drive_id, partition_start_sector):
     try:
         # Create the full path to the USB drive using the drive identifier
-        usb_path = r"\\.\PHYSICALDRIVE" + drive_id
+        usb_path = r'\\.\\' + drive_id
 
         with open(usb_path, 'rb') as f:
             # Seek to the desired sector using the sector number
@@ -93,7 +93,7 @@ def read_vbr(drive_id, partition_start_sector):
         print("Error: Permission denied. Run the script with appropriate privileges.")
 
 #============================Main==================================
-drive_id = "1"
+drive_id = "D:"
 # Print MBR
 first_sector = read_MBR(drive_id)
 print("First sector: ", first_sector)
