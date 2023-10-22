@@ -1,7 +1,10 @@
 import os
-#BYTE_P_SECTOR = 512
+
+# Initialize global variables
+byte_per_sector = None
 mft_cluster = None
-        
+sector_per_cluster = None
+
 # def read_MBR(drive_id):
 #     try:
 #         path = r"\\.\PHYSICALDRIVE" + drive_id
@@ -39,7 +42,7 @@ mft_cluster = None
 #         print("Error: Permission denied. Run the script with appropriate privileges.")
 
 def print_VBR_info(vbr_data):
-    global mft_cluster
+    global mft_cluster, sector_per_cluster, byte_per_sector
     # Function to print VBR information, including BPB details
     if vbr_data is None:
         print("Error: VBR data is None.")
@@ -59,7 +62,7 @@ def print_VBR_info(vbr_data):
     print("Sectors Per Cluster: ", int.from_bytes(bpb_data[2:3], byteorder='little'))
     print("Reserved sector: ", int.from_bytes(bpb_data[3:5], byteorder='little'))
     print("Media Type: ", int.from_bytes(bpb_data[10:11], byteorder='little'))
-    print("Sectors per track", int.from_bytes(bpb_data[13:15], byteorder='little'))
+    print("Sectors per track: ", int.from_bytes(bpb_data[13:15], byteorder='little'))
     print("Number of heads: ", int.from_bytes(bpb_data[15:17], byteorder='little'))
     print("First sector of disk: ", int.from_bytes(bpb_data[17:21], byteorder='little'))
     print("Total sector: ", int.from_bytes(bpb_data[29:37], byteorder='little'))
@@ -72,6 +75,10 @@ def print_VBR_info(vbr_data):
     
     #Get mft cluster number
     mft_cluster = int.from_bytes(bpb_data[37:45], byteorder='little')
+    #Get sector per cluster
+    sector_per_cluster = int.from_bytes(bpb_data[2:3], byteorder='little')
+    #Byte per sector
+    byte_per_sector = int.from_bytes(bpb_data[0:2], byteorder='little')
         
 def read_vbr(disk_letter):
     try:
@@ -102,16 +109,35 @@ def detect_filesystem_using_vbr(vbr_data):
     except Exception as e:
         return 'Error'
     
+def get_MFT(disk_letter):
+    try:
+        global mft_cluster, sector_per_cluster, byte_per_sector
+        cluster_number = mft_cluster * sector_per_cluster
+        disk_path = fr'\\.\{disk_letter}:'
+        
+        with open(disk_path, 'rb') as f:
+            f.seek(cluster_number * byte_per_sector)
+            mft_data = f.read(42)
+            # mft_data_hex = ' '.join(['{:02X}'.format(byte) for byte in mft_data])
+            # print('MFT Data: ', mft_data_hex)
+            return mft_data
+    except FileNotFoundError:
+        print('Error: File not found.')
+    except PermissionError:
+        print('Error: Permission denied. Run the script with appropriate privileges.')
+    except Exception as e:
+        print(f'Error reading MFT: {str(e)}')
+    
 #============================Main==================================
-disk_letter = "C"
+disk_letter = "E"
 #Read VBR Data from disk
 vbr_data = read_vbr(disk_letter)
 #Detect file system
 fileSystemType = detect_filesystem_using_vbr(vbr_data)
 if (fileSystemType == 'NTFS'):
     print_VBR_info(vbr_data)
-    #Get mft cluster number
-    print("\nMFT cluster number: ", mft_cluster)
+    #Read MFT Data
+    
 else:
     print("\nNot NTFS")
 
