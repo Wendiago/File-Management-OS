@@ -1,5 +1,5 @@
 import os
-BYTE_P_SECTOR = 512
+#BYTE_P_SECTOR = 512
 mft_cluster = None
         
 # def read_MBR(drive_id):
@@ -73,26 +73,46 @@ def print_VBR_info(vbr_data):
     #Get mft cluster number
     mft_cluster = int.from_bytes(bpb_data[37:45], byteorder='little')
         
-def read_vbr(drive_letter):
+def read_vbr(disk_letter):
     try:
-        drive_path = fr'\\.\{drive_letter}:'
+        disk_path = fr'\\.\{disk_letter}:'
 
-        with open(drive_path, 'rb') as f:
+        with open(disk_path, 'rb') as f:
             # Read the VBR data
             vbr_data = f.read(512)
             
             return vbr_data
 
     except FileNotFoundError:
-        print(f"Error: Drive identifier {drive_letter} not found.")
+        print(f"Error: Drive identifier {disk_letter} not found.")
     except PermissionError:
         print("Error: Permission denied. Run the script with appropriate privileges.")
 
-#============================Main==================================
-drive_letter = "C"
-# Print VBR
-vbr_data = read_vbr(drive_letter)
-print_VBR_info(vbr_data)
+def detect_filesystem_using_vbr(vbr_data):
+    try:
+        # Check for FAT12, FAT16, or FAT32
+        if vbr_data[0x36:0x3A] == b'FAT ':
+            return 'FAT' + str(vbr_data[0x52])
 
-#Get mft cluster number
-print("\nMFT cluster number: ", mft_cluster)
+        # Check for NTFS
+        if vbr_data[3:11] == b'NTFS    ':
+            return 'NTFS'
+
+        return 'Unknown'
+    except Exception as e:
+        return 'Error'
+    
+#============================Main==================================
+disk_letter = "C"
+#Read VBR Data from disk
+vbr_data = read_vbr(disk_letter)
+#Detect file system
+fileSystemType = detect_filesystem_using_vbr(vbr_data)
+if (fileSystemType == 'NTFS'):
+    print_VBR_info(vbr_data)
+    #Get mft cluster number
+    print("\nMFT cluster number: ", mft_cluster)
+else:
+    print("\nNot NTFS")
+
+
