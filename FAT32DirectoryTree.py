@@ -4,7 +4,7 @@ BYTE_P_SECTOR = 512
 
 def read_vbr(drive_letter):
     try:
-        filename = "03042023.txt"
+        #filename = "03042023.txt"
         drive_path = fr'\\.\{drive_letter}:'
 
         with open(drive_path, 'rb') as f:
@@ -54,31 +54,23 @@ volumeLabel = boot_sector_data[71:82].decode("utf-8")
 systemID = boot_sector_data[82:90].decode("utf-8")
 
 # PRINT 
-print("\t ================ Information ==================")
-print("JMP Instruction:", ' '.join(['{:02X}'.format(byte) for byte in jmp]))
-print("JMP Instruction 2:", ' ',jmp)
-print("OEM Name:", OEM_ID)
-print("\n\t\tBIOS Parameter Block (BPB) Details:\n")
-print("Bytes Per Sector: ", bytesPerSector)
-print("Sectors Per Cluster: ", sectorsPerCluster)
-print("Reserved sector: ", reservedSectors)
-print("Number of FATs: ", fatsNum)
-print("Media Descriptor: ", mediaDescriptor)
-print("Sectors per track: ", sectorPerTrack)
-print("Number of heads: ", headsNum)
-print("Hidden sectors: ", hiddenSectors)
-print("Total sector: ", totalSectors)
-print("Sectors per FAT: ", sectorsPerFat)
-print("Extended flags: ",fatHandlingFlags)
-print("Version: ", driveVersion)
-print("Root cluster: ", clusterNumForStartRootTable)
-print("System Information: ", systemInformation)
-print("Backup Boot Sector: ", backUpBootSector)
+offset = sectorsPerCluster*clusterNumForStartRootTable*bytesPerSector*512
+try:
+    filename = "03042023.txt"
+    drive_path = fr'\\.\{drive_letter}:\{filename}'
+    entry_data = None
+    
+    with open(drive_path, 'rb') as f:
+        # Read the VBR data
+        f.seek(offset)
+        entry_data = f.read(32)
+        filename = entry_data[:8].decode('utf-8').strip()
+        file_extension = entry_data[8:11].decode('utf-8').strip()
 
-print("\n\t\tExtended BIOS Parameter Block Details:\n")
-print("Physical dirve: ", physicalDrive)
-print("Reverved: ",reversed)
-print("Extended signature: ", signature)
-print("Serial number: ", id)
-print("Volume label: ", volumeLabel)
-print("File system: ",systemID)
+        print(entry_data.hex())
+        print(f"Name: {filename}.{file_extension}")
+
+except FileNotFoundError:
+    print(f"Error: Drive identifier {drive_letter} not found.")
+except PermissionError:
+    print("Error: Permission denied. Run the script with appropriate privileges.")
