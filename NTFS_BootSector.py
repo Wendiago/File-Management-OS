@@ -213,7 +213,6 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
         if (check_MFT(mft_data) == True):
             node = MFT_info(mft_data)
             if (node):
-                print('.')
                 add_child_by_node(root, node)
         else:
             break
@@ -229,7 +228,7 @@ def print_tree(node, depth=0, indent=''):
 
 
 #============================Main==================================
-disk_letter = "C"
+disk_letter = "D"
 #Read VBR Data from disk
 vbr_data = read_vbr(disk_letter)
 #Detect file system
