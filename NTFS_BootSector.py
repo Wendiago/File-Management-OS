@@ -141,36 +141,39 @@ def check_MFT(mft_data):
     return True
 
 def MFT_info(mft_data):
-    # Extract and print the sequence number (2 bytes) at offset 10
+    # Extract the sequence number (2 bytes) at offset 10
     sequence_number = int.from_bytes(mft_data[0x10:0x12], byteorder='little')
 
-    # Extract and print the flags (2 bytes) at offset 16
+    # Extract the flags (2 bytes) at offset 16
     flags = int.from_bytes(mft_data[0x16:0x18], byteorder='little')
     used = flags & 0x0001
 
-    # Extract and print file permission (4 bytes) at offset 70
+    # Extract file permission (4 bytes) at offset 70
     file_permission = int.from_bytes(mft_data[0x70:0x74], byteorder='little')
     system_file = (file_permission>>1 & 0x1)
 
     if (used == False or system_file == True):
         return None
 
-    # Extract and print the ID (4 bytes) at offset 0x2C
+    # Extract the ID (4 bytes) at offset 0x2C
     mft_entry_id = int.from_bytes(mft_data[0x2C:0x30], byteorder='little')
 
-    # Extract and print the parent ID (6 bytes) at offset 0xB0
+    # Extract the parent ID (6 bytes) at offset 0xB0
     parent_id = int.from_bytes(mft_data[0xB0:0xB6], byteorder='little')
 
-    # Extract and print the parent sequence number (2 bytes) at offset 0xB6
+    # Extract the parent sequence number (2 bytes) at offset 0xB6
     parent_sequence = int.from_bytes(mft_data[0xB6:0xB8], byteorder='little')
 
-    # Extract and print the name length (1 byte) at offset 0xF0
+    # Extract the name length (1 byte) at offset 0xF0
     name_length = int.from_bytes(mft_data[0xF0:0xF1], byteorder='little')
 
-    # Extract and print the name (variable length) at offset 0xF2
+    # Extract the name (variable length) at offset 0xF2
     name_start = 0xF2
     name_end = name_start + name_length*2
-    name = mft_data[name_start:name_end].decode('utf-16le')
+    try:
+        name = mft_data[name_start:name_end].decode('utf-16-le')
+    except:
+        return None
 
     return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name)
     
@@ -184,11 +187,12 @@ class TreeNode:
         self.name = name
         self.children = []
 
-def add_child_by_parent_id_and_sequence(root, child):
+def add_child_by_node(root, child):
     parent = find_node(root, child.parent_id, child.parent_sequence)
     if parent:
         parent.children.append(child)
 
+#find a node by id and sequence number
 def find_node(node, parent_id, parent_sequence):
     if node:
         if node.id == parent_id and node.sequence == parent_sequence:
@@ -199,6 +203,7 @@ def find_node(node, parent_id, parent_sequence):
                 return result
     return None
 
+#build a directory tree
 def build_tree(id, sequence, parent_id, parent_sequence, name):
     root = TreeNode(id, sequence, parent_id, parent_sequence, name)
     i = 27
@@ -206,13 +211,15 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
         mft_data = get_MFT(disk_letter, 2*i)
         i = i + 1
         if (check_MFT(mft_data) == True):
-            nodeTree = MFT_info(mft_data)
-            if (nodeTree):
-                add_child_by_parent_id_and_sequence(root, nodeTree)
+            node = MFT_info(mft_data)
+            if (node):
+                print('.')
+                add_child_by_node(root, node)
         else:
             break
     return root
 
+#print the file directory
 def print_tree(node, depth=0, indent=''):
     if node:
         new_indent = indent + '|   ' if depth > 1 else ''
@@ -222,7 +229,7 @@ def print_tree(node, depth=0, indent=''):
 
 
 #============================Main==================================
-disk_letter = "D"
+disk_letter = "C"
 #Read VBR Data from disk
 vbr_data = read_vbr(disk_letter)
 #Detect file system
