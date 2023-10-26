@@ -2,11 +2,8 @@ import os
 
 BYTE_P_SECTOR = 512
 
-def read_vbr(drive_letter):
+def read_vbr(drive_path):
     try:
-        #filename = "03042023.txt"
-        drive_path = fr'\\.\{drive_letter}:'
-
         with open(drive_path, 'rb') as f:
             # Read the VBR data
             boot_sector_data = f.read(BYTE_P_SECTOR)
@@ -14,63 +11,72 @@ def read_vbr(drive_letter):
             return boot_sector_data
 
     except FileNotFoundError:
-        print(f"Error: Drive identifier {drive_letter} not found.")
+        print(f"Error: Drive identifier {drive_path} not found.")
+    except PermissionError:
+        print("Error: Permission denied. Run the script with appropriate privileges.")    
+def read_folder(path):
+    try:
+        dirs = os.listdir( path )
+        for file in dirs:
+
+            with open(path + '/' + file ,'rb') as f:
+                boot_sector_data = f.read(BYTE_P_SECTOR)
+                print("open " + file)
+    except FileNotFoundError:
+        print(f"Error: Drive identifier {drive_path} not found.")
     except PermissionError:
         print("Error: Permission denied. Run the script with appropriate privileges.")
-
-
 ######################################## MAIN  
-drive_letter = "D"
+def build_folder_tree(drive_path):
+    # PRINT 
+    boot_sector_data = read_vbr(drive_path)
+    bytes_per_sector = int.from_bytes(boot_sector_data[11:13], "little")
+    reserved_sectors = int.from_bytes(boot_sector_data[14:16], "little")
+    num_fats = int.from_bytes(boot_sector_data[16:17], "little")
+    sectors_per_fat = int.from_bytes(boot_sector_data[36:40], "little")
+    bytes_per_dir_entry = 32
 
-# READ DISK
-boot_sector_data = read_vbr(drive_letter)
-
-# INIT
-jmp = boot_sector_data[0:3]
-OEM_ID = boot_sector_data[3:11].decode("utf-8") 
-bytesPerSector = int.from_bytes(boot_sector_data[11:13],byteorder='little')
-sectorsPerCluster = int.from_bytes(boot_sector_data[13:14],'little')
-reservedSectors = int.from_bytes(boot_sector_data[14:16],'little')
-fatsNum = int.from_bytes(boot_sector_data[16:17],'little')
-# 17:21: Not used
-mediaDescriptor = boot_sector_data[21:22].hex()
-# 22:24: Not used
-sectorPerTrack = int.from_bytes(boot_sector_data[24:26],"little")
-headsNum = int.from_bytes(boot_sector_data[26:28],"little")
-hiddenSectors =  int.from_bytes(boot_sector_data[28:32],"little")
-totalSectors = int.from_bytes(boot_sector_data[32:36],"little")
-sectorsPerFat = int.from_bytes(boot_sector_data[36:40],"little")
-fatHandlingFlags = int.from_bytes(boot_sector_data[40:41],"little")
-driveVersion = int.from_bytes(boot_sector_data[42:44],"little")
-clusterNumForStartRootTable = int.from_bytes(boot_sector_data[44:48],"little")
-systemInformation = int.from_bytes(boot_sector_data[48:50],"little") # for the File System Information Sector
-backUpBootSector =int.from_bytes(boot_sector_data[50:52],"little") #for the Backup Boot Sector
-reversed =int.from_bytes(boot_sector_data[52:63],"little")
-physicalDrive = int.from_bytes(boot_sector_data[64:65],"little")
-reverved =int.from_bytes(boot_sector_data[65:66],"little")
-signature =int.from_bytes(boot_sector_data[66:67],"little")
-id = boot_sector_data[67:71].hex()
-volumeLabel = boot_sector_data[71:82].decode("utf-8")
-systemID = boot_sector_data[82:90].decode("utf-8")
-
-# PRINT 
-offset = sectorsPerCluster*clusterNumForStartRootTable*bytesPerSector*512
-try:
-    filename = "03042023.txt"
-    drive_path = fr'\\.\{drive_letter}:\{filename}'
-    entry_data = None
+    root_dir_offset = (reserved_sectors + num_fats *
+                        sectors_per_fat) * bytes_per_sector
     
+    
+    print(f"drivepath: {drive_path} ")
+
     with open(drive_path, 'rb') as f:
         # Read the VBR data
-        f.seek(offset)
-        entry_data = f.read(32)
-        filename = entry_data[:8].decode('utf-8').strip()
-        file_extension = entry_data[8:11].decode('utf-8').strip()
+        f.seek(root_dir_offset)
+        while True:
+            sector = f.read(512)
+            for i in range(0, bytes_per_sector, bytes_per_dir_entry):
+                dir_entry = sector[i:i+bytes_per_dir_entry]
+                if not dir_entry[0]:  # End of the directory
+                    print("Folder tree created successfully.")
+                    return
 
-        print(entry_data.hex())
-        print(f"Name: {filename}.{file_extension}")
+                if dir_entry[0] != 0xE5: # Long file name entry
+                    if dir_entry[11] == 0x0F:  
+                        continue
 
-except FileNotFoundError:
-    print(f"Error: Drive identifier {drive_letter} not found.")
-except PermissionError:
-    print("Error: Permission denied. Run the script with appropriate privileges.")
+                    if dir_entry[11] == 0x10:  # Subdirectory entry
+                        folder_name = bytes(dir_entry[:8]).decode(
+                            errors='ignore').strip()
+                        if folder_name != '.' and folder_name != '..' and folder_name != "":
+                            subfolder_path = fr"{drive_path}\{folder_name}"
+                            print(f"Folder: {folder_name}")
+                            read_folder(subfolder_path)
+                           
+                    else:  # File entry
+                        file_name = bytes(dir_entry[:8]).decode(
+                            errors='ignore').strip()
+                        extension = bytes(dir_entry[8:11]).decode(
+                            errors='ignore').strip()
+                        if file_name != '':  # Skip empty file entries
+                            file_name_with_extension = f"{file_name}.{extension}"
+                            print(f"File: {file_name_with_extension}")
+
+
+##################### MAIN #########################
+drive_letter = "D"
+drive_path = fr'{drive_letter}:'
+#build_folder_tree(drive_path)
+read_folder(fr'D:/')
