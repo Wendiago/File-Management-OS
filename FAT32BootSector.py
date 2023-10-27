@@ -4,7 +4,6 @@ BYTE_P_SECTOR = 512
 
 def read_vbr(drive_letter):
     try:
-        filename = "03042023.txt"
         drive_path = fr'\\.\{drive_letter}:'
 
         with open(drive_path, 'rb') as f:
