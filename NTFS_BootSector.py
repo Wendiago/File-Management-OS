@@ -111,17 +111,18 @@ def detect_filesystem_using_vbr(vbr_data):
     except Exception as e:
         return 'Error'
     
-def get_MFT(disk_letter, next_sector):
+def get_MFT(disk_letter, next_id):
     try:
         global mft_cluster, sector_per_cluster, byte_per_sector
-        cluster_number = mft_cluster * sector_per_cluster + next_sector
+        offset = mft_cluster * sector_per_cluster * byte_per_sector + next_id * 1024
         disk_path = fr'\\.\{disk_letter}:'
         
         with open(disk_path, 'rb') as f:
-            f.seek(cluster_number * byte_per_sector)
+            f.seek(offset, 0)
             mft_data = f.read(1024)
             # mft_data_hex = ' '.join(['{:02X}'.format(byte) for byte in mft_data])
             # print('MFT Data: ', mft_data_hex)
+            f.close()
             return mft_data
     except FileNotFoundError:
         print('Error: File not found.')
@@ -191,6 +192,8 @@ def add_child_by_node(root, child):
     parent = find_node(root, child.parent_id, child.parent_sequence)
     if parent:
         parent.children.append(child)
+        return True
+    return False
 
 #find a node by id and sequence number
 def find_node(node, parent_id, parent_sequence):
@@ -206,16 +209,35 @@ def find_node(node, parent_id, parent_sequence):
 #build a directory tree
 def build_tree(id, sequence, parent_id, parent_sequence, name):
     root = TreeNode(id, sequence, parent_id, parent_sequence, name)
-    i = 27
+    nodes = []
+
+    for i in range(24):
+        mft_data = get_MFT(disk_letter, i)
+        if (check_MFT(mft_data) == True):
+            node = MFT_info(mft_data)
+            if (node):
+                nodes.append(node)
+
+    i = 24
     while True:
-        mft_data = get_MFT(disk_letter, 2*i)
+        mft_data = get_MFT(disk_letter, i)
         i = i + 1
         if (check_MFT(mft_data) == True):
             node = MFT_info(mft_data)
             if (node):
-                add_child_by_node(root, node)
+                nodes.append(node)
         else:
             break
+        
+    while True:
+        flag = False
+        for node in nodes:
+            if add_child_by_node(root, node):
+                flag = True
+                nodes.remove(node)
+        if (flag == False):
+            break
+    
     return root
 
 #print the file directory
@@ -236,14 +258,13 @@ fileSystemType = detect_filesystem_using_vbr(vbr_data)
 if (fileSystemType == 'NTFS'):
     print_VBR_info(vbr_data)
     #Read MFT Data
-    
+    # Build the tree
+    root_node = build_tree(5, 5, 0, 0, '.')
+
+    # Print the tree
+    print_tree(root_node)
 else:
     print("\nNot NTFS")
 
 print("")
 
-# Build the tree
-root_node = build_tree(5, 5, 0, 0, '.')
-
-# Print the tree
-print_tree(root_node)
