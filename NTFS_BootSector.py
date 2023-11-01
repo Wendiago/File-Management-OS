@@ -89,7 +89,7 @@ def read_vbr(disk_letter):
         with open(disk_path, 'rb') as f:
             # Read the VBR data
             vbr_data = f.read(512)
-            
+            f.close()
             return vbr_data
 
     except FileNotFoundError:
@@ -145,12 +145,34 @@ def MFT_info(mft_data):
     # Extract the sequence number (2 bytes) at offset 10
     sequence_number = int.from_bytes(mft_data[0x10:0x12], byteorder='little')
 
+    # location and length of the standard_information attribute
+    offset_standard_information = int.from_bytes(mft_data[0x14:0x16], byteorder='little')
+    length_standard_information = int.from_bytes(mft_data[offset_standard_information + 4:offset_standard_information + 8], byteorder='little')
+
+    # location and length of the file_name attribute
+    offset_file_name = offset_standard_information + length_standard_information
+    type_file_name = int.from_bytes(mft_data[offset_file_name:offset_file_name + 4], byteorder='little')
+    length_file_name = int.from_bytes(mft_data[offset_file_name + 4:offset_file_name + 8], byteorder='little')
+
+    if (type_file_name != 48):
+        offset_file_name = offset_file_name + length_file_name
+        length_file_name = int.from_bytes(mft_data[offset_file_name + 4:offset_file_name + 8], byteorder='little')
+
+    # location of the third attribute
+    offset_data = offset_file_name + length_file_name
+    type_data = int.from_bytes(mft_data[offset_data:offset_data + 4], byteorder='little')
+    length_data = int.from_bytes(mft_data[offset_data + 4:offset_data + 8], byteorder='little')
+    while type_data < 128:
+        offset_data = offset_data + length_data
+        type_data = int.from_bytes(mft_data[offset_data:offset_data + 4], byteorder='little')
+        length_data = int.from_bytes(mft_data[offset_data + 4:offset_data + 8], byteorder='little')
+
     # Extract the flags (2 bytes) at offset 16
     flags = int.from_bytes(mft_data[0x16:0x18], byteorder='little')
     used = flags & 0x0001
 
-    # Extract file permission (4 bytes) at offset 70
-    file_permission = int.from_bytes(mft_data[0x70:0x74], byteorder='little')
+    # Extract file permission (4 bytes) at offset 56 from the first attribute
+    file_permission = int.from_bytes(mft_data[offset_standard_information + 56:offset_standard_information + 60], byteorder='little')
     system_file = (file_permission>>1 & 0x1)
 
     if (used == False or system_file == True):
@@ -159,33 +181,54 @@ def MFT_info(mft_data):
     # Extract the ID (4 bytes) at offset 0x2C
     mft_entry_id = int.from_bytes(mft_data[0x2C:0x30], byteorder='little')
 
-    # Extract the parent ID (6 bytes) at offset 0xB0
-    parent_id = int.from_bytes(mft_data[0xB0:0xB6], byteorder='little')
+    # Extract the parent ID (6 bytes) at offset 24 from the second attribute
+    parent_id = int.from_bytes(mft_data[offset_file_name + 24:offset_file_name + 30], byteorder='little')
 
-    # Extract the parent sequence number (2 bytes) at offset 0xB6
-    parent_sequence = int.from_bytes(mft_data[0xB6:0xB8], byteorder='little')
+    # Extract the parent sequence number (2 bytes) at offset 30 from the second attribute
+    parent_sequence = int.from_bytes(mft_data[offset_file_name + 30:offset_file_name + 32], byteorder='little')
 
-    # Extract the name length (1 byte) at offset 0xF0
-    name_length = int.from_bytes(mft_data[0xF0:0xF1], byteorder='little')
+    # Extract the name length (1 byte) at offset 88 from the second attribute
+    name_length = int.from_bytes(mft_data[offset_file_name + 88:offset_file_name + 89], byteorder='little')
 
-    # Extract the name (variable length) at offset 0xF2
-    name_start = 0xF2
-    name_end = name_start + name_length*2
+    # Extract the name (variable length) at offset 90 from the second attribute
     try:
-        name = mft_data[name_start:name_end].decode('utf-16-le')
+        name = mft_data[offset_file_name + 90:offset_file_name + 90 + name_length*2].decode('utf-16-le')
     except:
         return None
+    
+    resident = int.from_bytes(mft_data[offset_data + 8:offset_data + 9], byteorder='little')
 
-    return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name)
+    data = ''
+    if resident == 0:
+        offset_data_start = offset_data + 24
+        data_length = int.from_bytes(mft_data[offset_data + 16:offset_data + 18], byteorder='little')
+        data = mft_data[offset_data_start:offset_data_start + data_length].decode('utf-8')
+    elif resident == 1:
+        offset_data_start = offset_data + 64
+        first_cluster = 0
+        while offset_data_start < offset_data + length_data:
+            size = int.from_bytes(mft_data[offset_data_start:offset_data_start + 1], byteorder='little')
+            if (size == 0):
+                break
+            cluster_count_size = size & 0xF
+            first_cluster_size = (size >> 4) & 0xF
+            cluster_count = int.from_bytes(mft_data[offset_data_start + 1:offset_data_start + 1 + cluster_count_size], byteorder='little')
+            first_cluster = int.from_bytes(mft_data[offset_data_start + 1 + cluster_count_size:offset_data_start + 1 + cluster_count_size + first_cluster_size], byteorder='little') + first_cluster
+            offset_data_start = offset_data_start + 1 + cluster_count_size + first_cluster_size
+            #Đọc cluster_count bắt đầu tính từ first_cluster để lấy data
+                
+
+    return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name, data)
     
 #============================Tree==================================
 class TreeNode:
-    def __init__(self, id, sequence, parent_id, parent_sequence, name):
+    def __init__(self, id, sequence, parent_id, parent_sequence, name, data = ''):
         self.id = id
         self.sequence = sequence
         self.parent_id = parent_id
         self.parent_sequence = parent_sequence
         self.name = name
+        self.data = data
         self.children = []
 
 def add_child_by_node(root, child):
@@ -218,6 +261,9 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
             if (node):
                 nodes.append(node)
 
+    mft_data = get_MFT(disk_letter, 255)
+    node = MFT_info(mft_data)
+    '''
     i = 24
     while True:
         mft_data = get_MFT(disk_letter, i)
@@ -237,6 +283,7 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
                 nodes.remove(node)
         if (flag == False):
             break
+        '''
     
     return root
 
