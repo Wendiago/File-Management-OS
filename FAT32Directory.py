@@ -175,7 +175,6 @@ def build_folder_tree(root_cluster, drive_path, flag, command):
                             if  flag == 0:
                                 print(main_entry_row)
                             if flag == 2 and command == main_entry_name and size != 0:
-                                print(size)
                                 data = f.read(size)
                                 print(bytes(data).decode(errors='ignore'))    
                             main_entry_name = ""
