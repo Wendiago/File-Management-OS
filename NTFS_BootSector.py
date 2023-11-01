@@ -1,4 +1,5 @@
 import os
+import re
 
 # Initialize global variables
 byte_per_sector = None
@@ -141,7 +142,7 @@ def check_MFT(mft_data):
     
     return True
 
-def MFT_info(mft_data):
+def MFT_info(mft_data, disk_letter):
     # Extract the sequence number (2 bytes) at offset 10
     sequence_number = int.from_bytes(mft_data[0x10:0x12], byteorder='little')
 
@@ -199,24 +200,68 @@ def MFT_info(mft_data):
     resident = int.from_bytes(mft_data[offset_data + 8:offset_data + 9], byteorder='little')
 
     data = ''
-    if resident == 0:
-        offset_data_start = offset_data + 24
-        data_length = int.from_bytes(mft_data[offset_data + 16:offset_data + 18], byteorder='little')
-        data = mft_data[offset_data_start:offset_data_start + data_length].decode('utf-8')
-    elif resident == 1:
-        offset_data_start = offset_data + 64
-        first_cluster = 0
-        while offset_data_start < offset_data + length_data:
-            size = int.from_bytes(mft_data[offset_data_start:offset_data_start + 1], byteorder='little')
-            if (size == 0):
-                break
-            cluster_count_size = size & 0xF
-            first_cluster_size = (size >> 4) & 0xF
-            cluster_count = int.from_bytes(mft_data[offset_data_start + 1:offset_data_start + 1 + cluster_count_size], byteorder='little')
-            first_cluster = int.from_bytes(mft_data[offset_data_start + 1 + cluster_count_size:offset_data_start + 1 + cluster_count_size + first_cluster_size], byteorder='little') + first_cluster
-            offset_data_start = offset_data_start + 1 + cluster_count_size + first_cluster_size
-            #Đọc cluster_count bắt đầu tính từ first_cluster để lấy data
+    pattern = r"\.txt$"
+    if re.search(pattern, name):
+        if resident == 0:
+            offset_data_start = offset_data + 24
+            data_length = int.from_bytes(mft_data[offset_data + 16:offset_data + 18], byteorder='little')
+            try:
+                data = mft_data[offset_data_start:offset_data_start + data_length].decode('utf-8')
+            except:
+                data = mft_data[offset_data_start:offset_data_start + data_length].decode('utf-16-le')
+        elif resident == 1:
+            disk_path = fr'\\.\{disk_letter}:'
+            offset_data_start = offset_data + 64
+            first_cluster = 0
+            while offset_data_start < offset_data + length_data:
+                size = int.from_bytes(mft_data[offset_data_start:offset_data_start + 1], byteorder='little')
+                if (size == 0):
+                    break
+                cluster_count_size = size & 0xF
+                first_cluster_size = (size >> 4) & 0xF
+                cluster_count = int.from_bytes(mft_data[offset_data_start + 1:offset_data_start + 1 + cluster_count_size], byteorder='little')
+                first_cluster = int.from_bytes(mft_data[offset_data_start + 1 + cluster_count_size:offset_data_start + 1 + cluster_count_size + first_cluster_size], byteorder='little') + first_cluster
+                offset_data_start = offset_data_start + 1 + cluster_count_size + first_cluster_size
                 
+                chunk = ''  # Use bytes instead of a string to preserve binary data
+
+                # Đọc cluster_count bắt đầu tính từ first_cluster để lấy data
+                with open(disk_path, 'rb') as f:
+                    f.seek(first_cluster * sector_per_cluster * byte_per_sector, 0)
+                    cluster_data = f.read(cluster_count * sector_per_cluster * byte_per_sector)
+                    
+                    # Find the position of the first occurrence of all zeros (0x00) in the cluster_data
+                    zero_position = cluster_data.find(b'\x00\x00')  # Assuming you're working with binary data
+                    
+                    try:
+                        if zero_position != -1:
+                            if cluster_data.startswith(b'\xFF\xFE'):
+                                # UTF-16 Little Endian BOM found
+                                chunk = cluster_data[0:zero_position + 1].decode('utf-16-le')
+                            elif cluster_data.startswith(b'\xFE\xFF'):
+                                # UTF-16 Big Endian BOM found
+                                chunk = cluster_data[0:zero_position].decode('utf-16-be')
+                            else:
+                                # No BOM found, default to UTF-8
+                                chunk = cluster_data[0:zero_position].decode('utf-8')
+                        else:
+                            # No 0x00 sequence found, decode based on the BOM or default to UTF-8
+                            if cluster_data.startswith(b'\xFF\xFE'):
+                                # UTF-16 Little Endian BOM found
+                                chunk = cluster_data.decode('utf-16-le')
+                            elif cluster_data.startswith(b'\xFE\xFF'):
+                                # UTF-16 Big Endian BOM found
+                                chunk = cluster_data.decode('utf-16-be')
+                            elif cluster_data.startswith(b'\EF\xBB\xBF'):
+                                # UTF-8 BOM found
+                                chunk = cluster_data.decode('utf-8')
+                            else:
+                                # No BOM found, default to UTF-8
+                                chunk = cluster_data.decode('utf-8')
+                    except:
+                        chunk = ''
+
+                data = data + chunk
 
     return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name, data)
     
@@ -257,19 +302,16 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
     for i in range(24):
         mft_data = get_MFT(disk_letter, i)
         if (check_MFT(mft_data) == True):
-            node = MFT_info(mft_data)
+            node = MFT_info(mft_data, disk_letter)
             if (node):
                 nodes.append(node)
-
-    mft_data = get_MFT(disk_letter, 255)
-    node = MFT_info(mft_data)
-    '''
+    
     i = 24
     while True:
         mft_data = get_MFT(disk_letter, i)
         i = i + 1
         if (check_MFT(mft_data) == True):
-            node = MFT_info(mft_data)
+            node = MFT_info(mft_data, disk_letter)
             if (node):
                 nodes.append(node)
         else:
@@ -283,7 +325,6 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
                 nodes.remove(node)
         if (flag == False):
             break
-        '''
     
     return root
 
@@ -294,6 +335,16 @@ def print_tree(node, depth=0, indent=''):
         print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}")
         for child in node.children:
             print_tree(child, depth + 1, new_indent)
+
+def print_text_file(node):
+    pattern = r"\.txt$"
+    if node:
+        if re.search(pattern, node.name):
+            print(node.name, ':')
+            print(node.data)
+            print('---------------------------------------------------------------------')
+        for child in node.children:
+            print_text_file(child)
 
 
 #============================Main==================================
@@ -310,6 +361,7 @@ if (fileSystemType == 'NTFS'):
 
     # Print the tree
     print_tree(root_node)
+    print_text_file(root_node)
 else:
     print("\nNot NTFS")
 
