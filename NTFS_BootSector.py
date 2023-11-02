@@ -6,42 +6,6 @@ byte_per_sector = None
 mft_cluster = None
 sector_per_cluster = None
 
-# def read_MBR(drive_id):
-#     try:
-#         path = r"\\.\PHYSICALDRIVE" + drive_id
-
-#         with open(path, 'rb') as f:
-#             mbr_data = f.read(512)  # Read the first 512 bytes (MBR size)
-
-#         if len(mbr_data) != 512:
-#             print("Error: MBR size is not 512 bytes.")
-#         else:
-#             # Extract partition information
-#             partition_start_offset = 446  # MBR partition table starts at byte 446
-#             partition_entry_size = 16  # Size of each partition entry
-
-#             # Read the partition entry for the first partition
-#             partition_entry = mbr_data[partition_start_offset:partition_start_offset + partition_entry_size]
-
-#             # Extract the starting sector number of the first partition
-#             partition_start_sector = partition_entry[8:12]
-#             first_sector_number = int.from_bytes(partition_start_sector, byteorder='little')
-
-#             # Print the MBR in hexadecimal format
-#             mbr_hex = ' '.join(['{:02X}'.format(byte) for byte in mbr_data])
-#             #print("MASTER BOOT RECORD: ", mbr_hex)
-            
-#             # Print the first partition's partition entry in hexadecimal format
-#             partition_entry_hex = ' '.join(['{:02X}'.format(byte) for byte in partition_entry])
-#             #print("PARTITION 1: ", partition_entry_hex)
-            
-#             return first_sector_number
-
-#     except FileNotFoundError:
-#         print(f"Error: Drive identifier PHYSICALDRIVE{drive_id} not found.")
-#     except PermissionError:
-#         print("Error: Permission denied. Run the script with appropriate privileges.")
-
 def print_VBR_info(vbr_data):
     global mft_cluster, sector_per_cluster, byte_per_sector
     # Function to print VBR information, including BPB details
@@ -148,8 +112,12 @@ def MFT_info(mft_data, disk_letter):
 
     # location and length of the standard_information attribute
     offset_standard_information = int.from_bytes(mft_data[0x14:0x16], byteorder='little')
+    type_standard_information = int.from_bytes(mft_data[offset_standard_information:offset_standard_information + 4], byteorder='little')
     length_standard_information = int.from_bytes(mft_data[offset_standard_information + 4:offset_standard_information + 8], byteorder='little')
 
+    if (type_standard_information != 16):
+        return None
+    
     # location and length of the file_name attribute
     offset_file_name = offset_standard_information + length_standard_information
     type_file_name = int.from_bytes(mft_data[offset_file_name:offset_file_name + 4], byteorder='little')
@@ -308,6 +276,7 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
     
     i = 24
     while True:
+        print(i)
         mft_data = get_MFT(disk_letter, i)
         i = i + 1
         if (check_MFT(mft_data) == True):
@@ -360,7 +329,9 @@ if (fileSystemType == 'NTFS'):
     root_node = build_tree(5, 5, 0, 0, '.')
 
     # Print the tree
+    print('File tree: ')
     print_tree(root_node)
+    print('Text file data: ')
     print_text_file(root_node)
 else:
     print("\nNot NTFS")
