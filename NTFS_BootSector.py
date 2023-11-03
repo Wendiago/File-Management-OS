@@ -372,8 +372,8 @@ def print_tree(node, depth=0, indent=''):
     if node:
         new_indent = indent + '|   ' if depth > 1 else ''
         permissions = ', '.join(node.permissions) if node.permissions else "None"
-        size_info = f"File size: {node.file_size}" if node.file_size > 0 else "Directory"
-        sector_info = f"Sector number: {node.sector_number}" if node.sector_number is not None else ""
+        size_info = f"File size: {node.file_size}" 
+        sector_info = f"Sector number: {node.sector_number}"
         print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}")
         print(f"{new_indent}|   Permissions: {permissions}")
         print(f"{new_indent}|   {size_info}")
