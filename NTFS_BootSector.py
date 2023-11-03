@@ -106,6 +106,67 @@ def check_MFT(mft_data):
     
     return True
 
+def interpret_file_permissions(file_permission):
+    permissions = []
+
+    # Bit 0: Read-Only
+    if (file_permission & 0x0001) == 0x0001:
+        permissions.append("Read-Only")
+
+    # Bit 1: Hidden
+    if (file_permission & 0x0002) == 0x0002:
+        permissions.append("Hidden")
+
+    # Bit 2: System
+    if (file_permission & 0x0004) == 0x0004:
+        permissions.append("System")
+
+    # Bit 3: Directory (This bit is set for directories)
+    if (file_permission & 0x0010) == 0x0010:
+        permissions.append("Directory")
+
+    # Bit 4: Archive
+    if (file_permission & 0x0020) == 0x0020:
+        permissions.append("Archive")
+
+    # Bit 5: Device
+    if (file_permission & 0x0040) == 0x0040:
+        permissions.append("Device")
+
+    # Bit 6: Normal
+    if (file_permission & 0x0080) == 0x0080:
+        permissions.append("Normal")
+
+    # Bit 9: Temporary
+    if (file_permission & 0x0200) == 0x0200:
+        permissions.append("Temporary")
+
+    # Bit 10: Sparse File
+    if (file_permission & 0x0400) == 0x0400:
+        permissions.append("Sparse File")
+
+    # Bit 11: Reparse Point
+    if (file_permission & 0x0800) == 0x0800:
+        permissions.append("Reparse Point")
+
+    # Bit 12: Compressed
+    if (file_permission & 0x1000) == 0x1000:
+        permissions.append("Compressed")
+
+    # Bit 13: Offline
+    if (file_permission & 0x2000) == 0x2000:
+        permissions.append("Offline")
+
+    # Bit 14: Not Content Indexed
+    if (file_permission & 0x4000) == 0x4000:
+        permissions.append("Not Content Indexed")
+
+    # Bit 15: Encrypted
+    if (file_permission & 0x8000) == 0x8000:
+        permissions.append("Encrypted")
+
+    return permissions
+
 def MFT_info(mft_data, disk_letter, next_id):
     sector_number = (mft_cluster  + next_id) * sector_per_cluster
 
@@ -142,9 +203,10 @@ def MFT_info(mft_data, disk_letter, next_id):
     flags = int.from_bytes(mft_data[0x16:0x18], byteorder='little')
     used = flags & 0x0001
 
-    # Extract file permission (4 bytes) at offset 56 from the first attribute
-    file_permission = int.from_bytes(mft_data[offset_standard_information + 56:offset_standard_information + 60], byteorder='little')
-    system_file = (file_permission>>1 & 0x1)
+     # Extract file permission (4 bytes) at offset 56 from the first attribute
+    file_permissions = int.from_bytes(mft_data[offset_standard_information + 56:offset_standard_information + 60], byteorder='little')
+    permissions = interpret_file_permissions(file_permissions)
+    system_file = (file_permissions>>1 & 0x1)
 
     if (used == False or system_file == True):
         return None
@@ -236,17 +298,18 @@ def MFT_info(mft_data, disk_letter, next_id):
 
                 data = data + chunk
 
-    return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name, file_size, sector_number, data)
+    return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name, file_size, sector_number, data, permissions)
     
 #============================Tree==================================
 class TreeNode:
-    def __init__(self, id, sequence, parent_id, parent_sequence, name, file_size, sector_number,  data = ''):
+    def __init__(self, id, sequence, parent_id, parent_sequence, name, file_size, sector_number,  data = '', permissions = ''):
         self.id = id
         self.sequence = sequence
         self.parent_id = parent_id
         self.parent_sequence = parent_sequence
         self.name = name
         self.data = data
+        self.permissions = permissions
         self.file_size = file_size
         self.sector_number = sector_number
         self.children = []
@@ -308,7 +371,13 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
 def print_tree(node, depth=0, indent=''):
     if node:
         new_indent = indent + '|   ' if depth > 1 else ''
-        print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}{'          ---File size: ' + str(node.file_size) if node.file_size > 0 else ''}{'          ---Sector number: ' + str(node.sector_number)}")
+        permissions = ', '.join(node.permissions) if node.permissions else "None"
+        size_info = f"File size: {node.file_size}" if node.file_size > 0 else "Directory"
+        sector_info = f"Sector number: {node.sector_number}" if node.sector_number is not None else ""
+        print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}")
+        print(f"{new_indent}|   Permissions: {permissions}")
+        print(f"{new_indent}|   {size_info}")
+        print(f"{new_indent}|   {sector_info}")
         for child in node.children:
             print_tree(child, depth + 1, new_indent)
 
@@ -324,7 +393,7 @@ def print_text_file(node):
 
 
 #============================Main==================================
-disk_letter = "D"
+disk_letter = "F"
 #Read VBR Data from disk
 vbr_data = read_vbr(disk_letter)
 #Detect file system
