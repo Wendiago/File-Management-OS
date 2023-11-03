@@ -375,7 +375,7 @@ def print_tree(node, depth=0, indent=''):
         size_info = f"File size: {node.file_size}" 
         sector_info = f"Sector number: {node.sector_number}"
         print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}")
-        print(f"{new_indent}|   Permissions: {permissions}")
+        print(f"{new_indent}|   Attributes: {permissions}")
         print(f"{new_indent}|   {size_info}")
         print(f"{new_indent}|   {sector_info}")
         for child in node.children:
