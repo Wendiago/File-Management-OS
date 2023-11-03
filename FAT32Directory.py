@@ -99,16 +99,14 @@ def build_folder_tree(root_cluster, drive_path, flag, command):
     folder_dict = {}
 
     def read_sub_entry(entry):
-        name = entry[1:11].decode('utf-16','strict')
-        name += entry[14:26].decode('utf-16','strict')
-        name += entry[28:32].decode('utf-16','strict')
+        name = entry[1:11].decode(encoding = 'utf-16',errors = 'ignore')
+        name += entry[14:26].decode(encoding = 'utf-16',errors = 'ignore')
+        name += entry[28:32].decode(encoding = 'utf-16',errors = 'ignore')
         name = name.replace('￿','') 
         return name
 
     # Print the header row
-    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} SECTOR"
-    if  flag == 0:
-        print(header)
+    
     if flag == 1:
         with open(drive_path, 'rb') as f1:
             f1.seek(root_dir_offset)
@@ -176,11 +174,12 @@ def build_folder_tree(root_cluster, drive_path, flag, command):
                                 print(main_entry_row)
                             if flag == 2 and command == main_entry_name and size != 0:
                                 data = f.read(size)
+                                print("Content in the file: ")
                                 print(bytes(data).decode(errors='ignore'))    
                             main_entry_name = ""
                         else:
                             file_name = dir_entry[:8].decode('utf-8',errors="ignore").strip()
-                            extension = bytes(dir_entry[8:11]).decode().strip()
+                            extension = bytes(dir_entry[8:11]).decode(errors="ignore").strip()
                             root_cluster = int.from_bytes(dir_entry[26:27],'little')
                             root_dir_offset = (reserved_sectors + num_fats * sectors_per_fat + (root_cluster - 2) * sectors_per_cluster) * bytes_per_sector
                             f.seek(root_dir_offset)
@@ -193,25 +192,26 @@ def build_folder_tree(root_cluster, drive_path, flag, command):
                                     print(file_row)
                                 if flag == 2 and command == file_name_with_extension and size != 0:
                                     data = f.read(size)
+                                    print("Content in the file: ")
                                     print(bytes(data).decode(errors='ignore'))
                             
                     elif dir_entry[11] == 0x16:  # System File
                         if len(main_entry_name) > 0:
                             main_entry_name = ""
                         else:
-                            file_name = bytes(dir_entry[:11]).decode(errors='strict').strip()
+                            file_name = bytes(dir_entry[:11]).decode(errors="ignore").strip()
                
 
                 
 def loop(name, root_cluster, drive_path):
     new_prompt = f"{name}:> "
     set_command_prompt(new_prompt)
+    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} SECTOR"
     folder_dict = build_folder_tree(root_cluster, drive_path, 0,"")
     while True:
         command = input(new_prompt)
-        for key in folder_dict.keys():
-            print(key)
-        print()
+        if ((command.find(".txt") >= 0) or command.find(".TXT")>=0) == False and (command.upper()== "EXIT") == False:
+            print(header)
         if command.lower() == "exit":
             break
         if command.lower() == "info":
@@ -222,19 +222,12 @@ def loop(name, root_cluster, drive_path):
             print(f"Sectors per FAT: {sectors_per_fat}")
             print(f"Root cluster: {root_cluster}")
             build_folder_tree(root_cluster, drive_path, 1,"")
-        
-        if command.lower() == "ls":
-            build_folder_tree(root_cluster, drive_path, 3,"")
-            for key in folder_dict.keys():
-                    print(key)
-            print() 
 
         
         if command in folder_dict:
-            if command.find("TXT" or "txt") >= 0:
+            if command.find(".TXT") >= 0 or command.find(".txt") >= 0:
                 build_folder_tree(root_cluster, drive_path, 2, command)
-            else:
-                loop(command, folder_dict[command], drive_path)
+            loop(command, folder_dict[command], drive_path)
         
 
 
@@ -257,16 +250,15 @@ def start_program():
     num_fats = int.from_bytes(sector[16:17], "little")
     sectors_per_fat = int.from_bytes(sector[36:40], "little")
     root_cluster = int.from_bytes(sector[44:48], "little")
-
     new_prompt = f"{name}:> "
     set_command_prompt(new_prompt)
-    folder_dict = build_folder_tree(root_cluster, drive_path, 100,"")
-
+    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} SECTOR"
+    print(header)
+    folder_dict = build_folder_tree(root_cluster, drive_path, 0,"")
     while True:
         command = input(new_prompt)
-        if command.lower() == "ls":
-            build_folder_tree(root_cluster, drive_path, 0,"")
-
+        if ((command.find(".txt") >= 0) or command.find(".TXT") >= 0) == False and (command.upper()== "EXIT") == False:
+            print(header)
         if command.lower() == "info":
             print(f"Bytes per sector: {bytes_per_sector}")
             print(f"Sectors per cluster: {sectors_per_cluster}")
@@ -280,10 +272,7 @@ def start_program():
         if command in folder_dict:
             if command.find(".TXT") >= 0 or command.find(".txt") >= 0:
                 build_folder_tree(root_cluster, drive_path, 2, command)
-            else:
-                print("có nè")
-                command = command.encode("utf-16").decode("utf-16")
-                loop(command, folder_dict[command], drive_path)
+            loop(command, folder_dict[command], drive_path)
             
         if command.lower() == "exit":
             break
