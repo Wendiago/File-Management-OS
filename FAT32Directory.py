@@ -215,6 +215,7 @@ def loop(name, root_cluster, drive_path):
         if command.lower() == "exit":
             break
         if command.lower() == "info":
+            print(f"-----------------    INFORMATION    ----------------------")
             print(f"Bytes per sector: {bytes_per_sector}")
             print(f"Sectors per cluster: {sectors_per_cluster}")
             print(f"Reserved: {reserved_sectors}")
@@ -257,9 +258,10 @@ def start_program():
     folder_dict = build_folder_tree(root_cluster, drive_path, 0,"")
     while True:
         command = input(new_prompt)
-        if ((command.find(".txt") >= 0) or command.find(".TXT") >= 0) == False and (command.upper()== "EXIT") == False:
+        if ((command.find(".txt") >= 0) or command.find(".TXT") >= 0) == False and (command.upper()== "EXIT") == False and command in folder_dict:
             print(header)
         if command.lower() == "info":
+            print(f"-----------------    INFORMATION    ----------------------")
             print(f"Bytes per sector: {bytes_per_sector}")
             print(f"Sectors per cluster: {sectors_per_cluster}")
             print(f"Reserved: {reserved_sectors}")
