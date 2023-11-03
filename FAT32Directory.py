@@ -75,12 +75,13 @@ def read_vbr(drive_path):
 def print_infor_dir(dir_entry):
     # Name and extension:
     # Attributes
-    READ_ONLY = dir_entry[11] >> 0 & 1
-    HIDDEN = dir_entry[11] >> 1 & 1
-    SYSTEM = dir_entry[11] >> 2 & 1
-    VOLUME = dir_entry[11] >> 3 & 1
-    DIRECTORY = dir_entry[11] >> 4 & 1
-    ARCHIVE = dir_entry[11] >> 5 & 1
+    print(dir_entry[11])
+    READ_ONLY = dir_entry[11] & 0x01
+    HIDDEN = dir_entry[11] & 0x02
+    SYSTEM = dir_entry[11] & 0x04
+    VOLUME = dir_entry[11] & 0x08
+    DIRECTORY = dir_entry[11] & 0x10
+    ARCHIVE = dir_entry[11] & 0x20
 
     # TIME
     # Created time
@@ -178,10 +179,18 @@ def build_folder_tree(root_cluster, drive_path):
                             0x01, 0x41] else main_entry_name
                     else:
                         attribute = ''
-                        if dir_entry[11] % 16 != 0:
-                            attribute = secondAttr[dir_entry[11] % 16]
-                        if (dir_entry[11] // 16) % 16 != 0:
-                            attribute += firstAttr[(dir_entry[11] // 16) % 16]
+                        if dir_entry[11] & 0x01:
+                            attribute += 'R'
+                        if dir_entry[11] & 0x02:
+                            attribute += 'H'
+                        if dir_entry[11] & 0x04:
+                            attribute += 'S'
+                        if dir_entry[11] & 0x08:
+                            attribute += 'V'
+                        if dir_entry[11] & 0x10:
+                            attribute += 'D'
+                        if dir_entry[11] & 0x20:
+                            attribute += 'A'
 
                         if len(main_entry_name) > 0:
                             main_entry_name = main_entry_name[:len(
@@ -193,7 +202,7 @@ def build_folder_tree(root_cluster, drive_path):
                                 "firstCluster": root_cluster,
                                 "size": size,
                                 "attribute": attribute,
-                                "sector": sectorID
+                                "sector": sectorID,
                             }
                             main_entry_name = ""
                         else:
@@ -211,7 +220,7 @@ def build_folder_tree(root_cluster, drive_path):
                                 "firstCluster": root_cluster,
                                 "size": size,
                                 "attribute": attribute,
-                                "sector": sectorID
+                                "sector": sectorID,
                             }
 
 
