@@ -243,6 +243,8 @@ def loop(name, root_cluster, drive_path, offset):
             if (command.endswith(".TXT") or command.endswith(".txt")) and 'A' in folder_dict[command]["attribute"]:
                 print_txt_File(
                     folder_dict[command]["firstCluster"], drive_path, folder_dict[command]["size"])
+            elif 'A' in folder_dict[command]["attribute"]:
+                print("\tSử dụng ứng dụng khác")
             loop(command, folder_dict[command]["firstCluster"],
                  drive_path, folder_dict[command]["offset"])
 
@@ -296,6 +298,8 @@ def start_program():
             if (command.endswith(".TXT") or command.endswith(".txt")) and 'A' in folder_dict[command]["attribute"]:
                 print_txt_File(
                     folder_dict[command]["firstCluster"], drive_path, folder_dict[command]["size"])
+            elif 'A' in folder_dict[command]["attribute"]:
+                print("\tSử dụng ứng dụng khác")
             loop(command, folder_dict[command]["firstCluster"],
                  drive_path, folder_dict[command]["offset"])
 
