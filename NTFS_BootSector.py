@@ -1,45 +1,10 @@
 import os
+import re
 
 # Initialize global variables
 byte_per_sector = None
 mft_cluster = None
 sector_per_cluster = None
-
-# def read_MBR(drive_id):
-#     try:
-#         path = r"\\.\PHYSICALDRIVE" + drive_id
-
-#         with open(path, 'rb') as f:
-#             mbr_data = f.read(512)  # Read the first 512 bytes (MBR size)
-
-#         if len(mbr_data) != 512:
-#             print("Error: MBR size is not 512 bytes.")
-#         else:
-#             # Extract partition information
-#             partition_start_offset = 446  # MBR partition table starts at byte 446
-#             partition_entry_size = 16  # Size of each partition entry
-
-#             # Read the partition entry for the first partition
-#             partition_entry = mbr_data[partition_start_offset:partition_start_offset + partition_entry_size]
-
-#             # Extract the starting sector number of the first partition
-#             partition_start_sector = partition_entry[8:12]
-#             first_sector_number = int.from_bytes(partition_start_sector, byteorder='little')
-
-#             # Print the MBR in hexadecimal format
-#             mbr_hex = ' '.join(['{:02X}'.format(byte) for byte in mbr_data])
-#             #print("MASTER BOOT RECORD: ", mbr_hex)
-            
-#             # Print the first partition's partition entry in hexadecimal format
-#             partition_entry_hex = ' '.join(['{:02X}'.format(byte) for byte in partition_entry])
-#             #print("PARTITION 1: ", partition_entry_hex)
-            
-#             return first_sector_number
-
-#     except FileNotFoundError:
-#         print(f"Error: Drive identifier PHYSICALDRIVE{drive_id} not found.")
-#     except PermissionError:
-#         print("Error: Permission denied. Run the script with appropriate privileges.")
 
 def print_VBR_info(vbr_data):
     global mft_cluster, sector_per_cluster, byte_per_sector
@@ -79,6 +44,8 @@ def print_VBR_info(vbr_data):
     sector_per_cluster = int.from_bytes(bpb_data[2:3], byteorder='little')
     #Byte per sector
     byte_per_sector = int.from_bytes(bpb_data[0:2], byteorder='little')
+
+    #reading MFT
         
 def read_vbr(disk_letter):
     try:
@@ -87,7 +54,7 @@ def read_vbr(disk_letter):
         with open(disk_path, 'rb') as f:
             # Read the VBR data
             vbr_data = f.read(512)
-            
+            f.close()
             return vbr_data
 
     except FileNotFoundError:
@@ -109,17 +76,18 @@ def detect_filesystem_using_vbr(vbr_data):
     except Exception as e:
         return 'Error'
     
-def get_MFT(disk_letter):
+def get_MFT(disk_letter, next_id):
     try:
         global mft_cluster, sector_per_cluster, byte_per_sector
-        cluster_number = mft_cluster * sector_per_cluster
+        offset = mft_cluster * sector_per_cluster * byte_per_sector + next_id * 1024
         disk_path = fr'\\.\{disk_letter}:'
         
         with open(disk_path, 'rb') as f:
-            f.seek(cluster_number * byte_per_sector)
-            mft_data = f.read(42)
+            f.seek(offset, 0)
+            mft_data = f.read(1024)
             # mft_data_hex = ' '.join(['{:02X}'.format(byte) for byte in mft_data])
             # print('MFT Data: ', mft_data_hex)
+            f.close()
             return mft_data
     except FileNotFoundError:
         print('Error: File not found.')
@@ -127,18 +95,255 @@ def get_MFT(disk_letter):
         print('Error: Permission denied. Run the script with appropriate privileges.')
     except Exception as e:
         print(f'Error reading MFT: {str(e)}')
+
+def check_MFT(mft_data):
+    if mft_data is None:
+        return False
+
+    # Check if the first 4 bytes contain "FILE" to ensure it's an MFT entry for a file
+    if mft_data[:4] != b'FILE':
+        return False
     
+    return True
+
+def MFT_info(mft_data, disk_letter, next_id):
+    sector_number = (mft_cluster  + next_id) * sector_per_cluster
+
+    # Extract the sequence number (2 bytes) at offset 10
+    sequence_number = int.from_bytes(mft_data[0x10:0x12], byteorder='little')
+
+    # location and length of the standard_information attribute
+    offset_standard_information = int.from_bytes(mft_data[0x14:0x16], byteorder='little')
+    type_standard_information = int.from_bytes(mft_data[offset_standard_information:offset_standard_information + 4], byteorder='little')
+    length_standard_information = int.from_bytes(mft_data[offset_standard_information + 4:offset_standard_information + 8], byteorder='little')
+
+    if (type_standard_information != 16):
+        return None
+    
+    # location and length of the file_name attribute
+    offset_file_name = offset_standard_information + length_standard_information
+    type_file_name = int.from_bytes(mft_data[offset_file_name:offset_file_name + 4], byteorder='little')
+    length_file_name = int.from_bytes(mft_data[offset_file_name + 4:offset_file_name + 8], byteorder='little')
+
+    if (type_file_name != 48):
+        offset_file_name = offset_file_name + length_file_name
+        length_file_name = int.from_bytes(mft_data[offset_file_name + 4:offset_file_name + 8], byteorder='little')
+
+    # location of the third attribute
+    offset_data = offset_file_name + length_file_name
+    type_data = int.from_bytes(mft_data[offset_data:offset_data + 4], byteorder='little')
+    length_data = int.from_bytes(mft_data[offset_data + 4:offset_data + 8], byteorder='little')
+    while type_data < 128:
+        offset_data = offset_data + length_data
+        type_data = int.from_bytes(mft_data[offset_data:offset_data + 4], byteorder='little')
+        length_data = int.from_bytes(mft_data[offset_data + 4:offset_data + 8], byteorder='little')
+
+    # Extract the flags (2 bytes) at offset 16
+    flags = int.from_bytes(mft_data[0x16:0x18], byteorder='little')
+    used = flags & 0x0001
+
+    # Extract file permission (4 bytes) at offset 56 from the first attribute
+    file_permission = int.from_bytes(mft_data[offset_standard_information + 56:offset_standard_information + 60], byteorder='little')
+    system_file = (file_permission>>1 & 0x1)
+
+    if (used == False or system_file == True):
+        return None
+
+    # Extract the ID (4 bytes) at offset 0x2C
+    mft_entry_id = int.from_bytes(mft_data[0x2C:0x30], byteorder='little')
+
+    # Extract the parent ID (6 bytes) at offset 24 from the second attribute
+    parent_id = int.from_bytes(mft_data[offset_file_name + 24:offset_file_name + 30], byteorder='little')
+
+    # Extract the parent sequence number (2 bytes) at offset 30 from the second attribute
+    parent_sequence = int.from_bytes(mft_data[offset_file_name + 30:offset_file_name + 32], byteorder='little')
+
+    # Extract file size (8 bytes) at offset 72 from the second attribute
+    file_size = int.from_bytes(mft_data[offset_file_name + 72:offset_file_name + 80], byteorder='little')
+
+    # Extract the name length (1 byte) at offset 88 from the second attribute
+    name_length = int.from_bytes(mft_data[offset_file_name + 88:offset_file_name + 89], byteorder='little')
+
+    # Extract the name (variable length) at offset 90 from the second attribute
+    try:
+        name = mft_data[offset_file_name + 90:offset_file_name + 90 + name_length*2].decode('utf-16-le')
+    except:
+        return None
+    
+    resident = int.from_bytes(mft_data[offset_data + 8:offset_data + 9], byteorder='little')
+
+    data = ''
+    pattern = r"\.txt$"
+    if re.search(pattern, name):
+        if resident == 0:
+            offset_data_start = offset_data + 24
+            data_length = int.from_bytes(mft_data[offset_data + 16:offset_data + 18], byteorder='little')
+            try:
+                data = mft_data[offset_data_start:offset_data_start + data_length].decode('utf-8')
+            except:
+                data = mft_data[offset_data_start:offset_data_start + data_length].decode('utf-16-le')
+        elif resident == 1:
+            disk_path = fr'\\.\{disk_letter}:'
+            offset_data_start = offset_data + 64
+            first_cluster = 0
+            while offset_data_start < offset_data + length_data:
+                size = int.from_bytes(mft_data[offset_data_start:offset_data_start + 1], byteorder='little')
+                if (size == 0):
+                    break
+                cluster_count_size = size & 0xF
+                first_cluster_size = (size >> 4) & 0xF
+                cluster_count = int.from_bytes(mft_data[offset_data_start + 1:offset_data_start + 1 + cluster_count_size], byteorder='little')
+                first_cluster = int.from_bytes(mft_data[offset_data_start + 1 + cluster_count_size:offset_data_start + 1 + cluster_count_size + first_cluster_size], byteorder='little') + first_cluster
+                offset_data_start = offset_data_start + 1 + cluster_count_size + first_cluster_size
+                
+                chunk = ''  # Use bytes instead of a string to preserve binary data
+
+                # Đọc cluster_count bắt đầu tính từ first_cluster để lấy data
+                with open(disk_path, 'rb') as f:
+                    f.seek(first_cluster * sector_per_cluster * byte_per_sector, 0)
+                    cluster_data = f.read(cluster_count * sector_per_cluster * byte_per_sector)
+                    
+                    # Find the position of the first occurrence of all zeros (0x00) in the cluster_data
+                    zero_position = cluster_data.find(b'\x00\x00')  # Assuming you're working with binary data
+                    
+                    try:
+                        if zero_position != -1:
+                            if cluster_data.startswith(b'\xFF\xFE'):
+                                # UTF-16 Little Endian BOM found
+                                chunk = cluster_data[0:zero_position + 1].decode('utf-16-le')
+                            elif cluster_data.startswith(b'\xFE\xFF'):
+                                # UTF-16 Big Endian BOM found
+                                chunk = cluster_data[0:zero_position].decode('utf-16-be')
+                            else:
+                                # No BOM found, default to UTF-8
+                                chunk = cluster_data[0:zero_position].decode('utf-8')
+                        else:
+                            # No 0x00 sequence found, decode based on the BOM or default to UTF-8
+                            if cluster_data.startswith(b'\xFF\xFE'):
+                                # UTF-16 Little Endian BOM found
+                                chunk = cluster_data.decode('utf-16-le')
+                            elif cluster_data.startswith(b'\xFE\xFF'):
+                                # UTF-16 Big Endian BOM found
+                                chunk = cluster_data.decode('utf-16-be')
+                            elif cluster_data.startswith(b'\EF\xBB\xBF'):
+                                # UTF-8 BOM found
+                                chunk = cluster_data.decode('utf-8')
+                            else:
+                                # No BOM found, default to UTF-8
+                                chunk = cluster_data.decode('utf-8')
+                    except:
+                        chunk = ''
+
+                data = data + chunk
+
+    return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name, file_size, sector_number, data)
+    
+#============================Tree==================================
+class TreeNode:
+    def __init__(self, id, sequence, parent_id, parent_sequence, name, file_size, sector_number,  data = ''):
+        self.id = id
+        self.sequence = sequence
+        self.parent_id = parent_id
+        self.parent_sequence = parent_sequence
+        self.name = name
+        self.data = data
+        self.file_size = file_size
+        self.sector_number = sector_number
+        self.children = []
+
+def add_child_by_node(root, child):
+    parent = find_node(root, child.parent_id, child.parent_sequence)
+    if parent:
+        parent.children.append(child)
+        return True
+    return False
+
+#find a node by id and sequence number
+def find_node(node, parent_id, parent_sequence):
+    if node:
+        if node.id == parent_id and node.sequence == parent_sequence:
+            return node
+        for child in node.children:
+            result = find_node(child, parent_id, parent_sequence)
+            if result:
+                return result
+    return None
+
+#build a directory tree
+def build_tree(id, sequence, parent_id, parent_sequence, name):
+    sector_number = (mft_cluster  + 5) * sector_per_cluster
+    root = TreeNode(id, sequence, parent_id, parent_sequence, name, 0, sector_number)
+    nodes = []
+
+    for i in range(24):
+        mft_data = get_MFT(disk_letter, i)
+        if (check_MFT(mft_data) == True):
+            node = MFT_info(mft_data, disk_letter, i)
+            if (node):
+                nodes.append(node)
+    
+    i = 24
+    while True:
+        mft_data = get_MFT(disk_letter, i)
+        if (check_MFT(mft_data) == True):
+            node = MFT_info(mft_data, disk_letter, i)
+            if (node):
+                nodes.append(node)
+        else:
+            break
+        i = i + 1
+        
+    while True:
+        flag = False
+        for node in nodes:
+            if add_child_by_node(root, node):
+                flag = True
+                nodes.remove(node)
+        if (flag == False):
+            break
+    
+    return root
+
+#print the file directory
+def print_tree(node, depth=0, indent=''):
+    if node:
+        new_indent = indent + '|   ' if depth > 1 else ''
+        print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}{'          ---File size: ' + str(node.file_size) if node.file_size > 0 else ''}{'          ---Sector number: ' + str(node.sector_number)}")
+        for child in node.children:
+            print_tree(child, depth + 1, new_indent)
+
+def print_text_file(node):
+    pattern = r"\.txt$"
+    if node:
+        if re.search(pattern, node.name):
+            print(node.name, ':')
+            print(node.data)
+            print('---------------------------------------------------------------------')
+        for child in node.children:
+            print_text_file(child)
+
+
 #============================Main==================================
-disk_letter = "E"
+disk_letter = "D"
 #Read VBR Data from disk
 vbr_data = read_vbr(disk_letter)
 #Detect file system
 fileSystemType = detect_filesystem_using_vbr(vbr_data)
 if (fileSystemType == 'NTFS'):
     print_VBR_info(vbr_data)
+    print('----------------------------------------------------------------------------')
     #Read MFT Data
-    
+    # Build the tree
+    root_node = build_tree(5, 5, 0, 0, '.')
+
+    # Print the tree
+    print('File tree: ')
+    print_tree(root_node)
+    print('----------------------------------------------------------------------------')
+    print('Text file data: ')
+    print_text_file(root_node)
 else:
     print("\nNot NTFS")
 
+print("")
 
