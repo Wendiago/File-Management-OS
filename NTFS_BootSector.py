@@ -6,6 +6,44 @@ byte_per_sector = None
 mft_cluster = None
 sector_per_cluster = None
 
+'''
+def read_MBR(drive_id):
+    try:
+        path = r"\\.\PHYSICALDRIVE" + drive_id
+
+        with open(path, 'rb') as f:
+            mbr_data = f.read(512)  # Read the first 512 bytes (MBR size)
+
+        if len(mbr_data) != 512:
+             print("Error: MBR size is not 512 bytes.")
+        else:
+             # Extract partition information
+            partition_start_offset = 446  # MBR partition table starts at byte 446
+            partition_entry_size = 16  # Size of each partition entry
+
+             # Read the partition entry for the first partition
+            partition_entry = mbr_data[partition_start_offset:partition_start_offset + partition_entry_size]
+
+             # Extract the starting sector number of the first partition
+            partition_start_sector = partition_entry[8:12]
+            first_sector_number = int.from_bytes(partition_start_sector, byteorder='little')
+
+            # Print the MBR in hexadecimal format
+            mbr_hex = ' '.join(['{:02X}'.format(byte) for byte in mbr_data])
+            print("MASTER BOOT RECORD: ", mbr_hex)
+            
+            Print the first partition's partition entry in hexadecimal format
+            partition_entry_hex = ' '.join(['{:02X}'.format(byte) for byte in partition_entry])
+            print("PARTITION 1: ", partition_entry_hex)
+            
+            return first_sector_number
+
+    except FileNotFoundError:
+        print(f"Error: Drive identifier PHYSICALDRIVE{drive_id} not found.")
+     except PermissionError:
+        print("Error: Permission denied. Run the script with appropriate privileges.")
+'''
+
 def print_VBR_info(vbr_data):
     global mft_cluster, sector_per_cluster, byte_per_sector
     # Function to print VBR information, including BPB details
@@ -44,6 +82,8 @@ def print_VBR_info(vbr_data):
     sector_per_cluster = int.from_bytes(bpb_data[2:3], byteorder='little')
     #Byte per sector
     byte_per_sector = int.from_bytes(bpb_data[0:2], byteorder='little')
+
+    #reading MFT
         
 def read_vbr(disk_letter):
     try:
@@ -165,10 +205,19 @@ def interpret_file_permissions(file_permission):
 
     return permissions
 
+def MFT_info(mft_data, disk_letter, next_id):
+    sector_number = (mft_cluster  + next_id) * sector_per_cluster
 
-def MFT_info(mft_data, disk_letter):
     # Extract the sequence number (2 bytes) at offset 10
     sequence_number = int.from_bytes(mft_data[0x10:0x12], byteorder='little')
+
+    # Extract the flags (2 bytes) at offset 16
+    flags = int.from_bytes(mft_data[0x16:0x18], byteorder='little')
+    used = flags & 0x01
+    is_directory = (flags >> 1) & 0x01
+    
+    if (used == False):
+        return None
 
     # location and length of the standard_information attribute
     offset_standard_information = int.from_bytes(mft_data[0x14:0x16], byteorder='little')
@@ -177,7 +226,7 @@ def MFT_info(mft_data, disk_letter):
 
     if (type_standard_information != 16):
         return None
-      
+    
     # location and length of the file_name attribute
     offset_file_name = offset_standard_information + length_standard_information
     type_file_name = int.from_bytes(mft_data[offset_file_name:offset_file_name + 4], byteorder='little')
@@ -186,6 +235,7 @@ def MFT_info(mft_data, disk_letter):
     if (type_file_name != 48):
         offset_file_name = offset_file_name + length_file_name
         length_file_name = int.from_bytes(mft_data[offset_file_name + 4:offset_file_name + 8], byteorder='little')
+
 
     # location of the third attribute
     offset_data = offset_file_name + length_file_name
@@ -196,16 +246,12 @@ def MFT_info(mft_data, disk_letter):
         type_data = int.from_bytes(mft_data[offset_data:offset_data + 4], byteorder='little')
         length_data = int.from_bytes(mft_data[offset_data + 4:offset_data + 8], byteorder='little')
 
-    # Extract the flags (2 bytes) at offset 16
-    flags = int.from_bytes(mft_data[0x16:0x18], byteorder='little')
-    used = flags & 0x0001
-
-    # Extract file permission (4 bytes) at offset 56 from the first attribute
+     # Extract file permission (4 bytes) at offset 56 from the first attribute
     file_permissions = int.from_bytes(mft_data[offset_standard_information + 56:offset_standard_information + 60], byteorder='little')
     permissions = interpret_file_permissions(file_permissions)
     system_file = (file_permissions>>1 & 0x1)
 
-    if (used == False or system_file == True):
+    if (system_file == True):
         return None
 
     # Extract the ID (4 bytes) at offset 0x2C
@@ -216,6 +262,9 @@ def MFT_info(mft_data, disk_letter):
 
     # Extract the parent sequence number (2 bytes) at offset 30 from the second attribute
     parent_sequence = int.from_bytes(mft_data[offset_file_name + 30:offset_file_name + 32], byteorder='little')
+
+    # Extract file size (8 bytes) at offset 72 from the second attribute
+    file_size = int.from_bytes(mft_data[offset_file_name + 72:offset_file_name + 80], byteorder='little')
 
     # Extract the name length (1 byte) at offset 88 from the second attribute
     name_length = int.from_bytes(mft_data[offset_file_name + 88:offset_file_name + 89], byteorder='little')
@@ -292,18 +341,21 @@ def MFT_info(mft_data, disk_letter):
 
                 data = data + chunk
 
-    return TreeNode(mft_entry_id, sequence_number, parent_id, parent_sequence, name, data, permissions)
+    return TreeNode(mft_entry_id, sequence_number, is_directory, parent_id, parent_sequence, name, file_size, sector_number, data, permissions)
     
 #============================Tree==================================
 class TreeNode:
-    def __init__(self, id, sequence, parent_id, parent_sequence, name, data = '', permissions = ''):
+    def __init__(self, id, sequence, is_directory, parent_id, parent_sequence, name, file_size, sector_number,  data = '', permissions = ''):
         self.id = id
         self.sequence = sequence
-        self.permissions = permissions
+        self.is_directory = is_directory
         self.parent_id = parent_id
         self.parent_sequence = parent_sequence
         self.name = name
         self.data = data
+        self.permissions = permissions
+        self.file_size = file_size
+        self.sector_number = sector_number
         self.children = []
 
 def add_child_by_node(root, child):
@@ -324,29 +376,36 @@ def find_node(node, parent_id, parent_sequence):
                 return result
     return None
 
+def find_node_by_name(resultNodes, node, name):
+    if node:
+        if node.name == name:
+            resultNodes.append(node)
+        for child in node.children:
+            find_node_by_name(resultNodes, child, name)
+
 #build a directory tree
 def build_tree(id, sequence, parent_id, parent_sequence, name):
-    root = TreeNode(id, sequence, parent_id, parent_sequence, name)
+    sector_number = (mft_cluster  + 5) * sector_per_cluster
+    root = TreeNode(id, sequence, True, parent_id, parent_sequence, name, 0, sector_number)
     nodes = []
 
     for i in range(24):
         mft_data = get_MFT(disk_letter, i)
         if (check_MFT(mft_data) == True):
-            node = MFT_info(mft_data, disk_letter)
+            node = MFT_info(mft_data, disk_letter, i)
             if (node):
                 nodes.append(node)
     
     i = 24
     while True:
-        print(i)
         mft_data = get_MFT(disk_letter, i)
-        i = i + 1
         if (check_MFT(mft_data) == True):
-            node = MFT_info(mft_data, disk_letter)
+            node = MFT_info(mft_data, disk_letter, i)
             if (node):
                 nodes.append(node)
         else:
             break
+        i = i + 1
         
     while True:
         flag = False
@@ -363,30 +422,66 @@ def build_tree(id, sequence, parent_id, parent_sequence, name):
 def print_tree(node, depth=0, indent=''):
     if node:
         new_indent = indent + '|   ' if depth > 1 else ''
-        permissions = ', '.join(node.permissions)
-        print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}(Permissions: {permissions})")
+        permissions = ', '.join(node.permissions) if node.permissions else "None"
+        size_info = f"File size: {node.file_size}" 
+        sector_info = f"Sector number: {node.sector_number}"
+        print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}")
+        print(f"{new_indent}|   Permissions: {permissions}")
+        print(f"{new_indent}|   {size_info}")
+        print(f"{new_indent}|   {sector_info}")
         for child in node.children:
             print_tree(child, depth + 1, new_indent)
 
-def print_text_file(node):
+def print_directory_file(node, depth=0, indent=''):
+    if node:
+        new_indent = indent + '|   ' if depth > 1 else ''
+        print(f"{new_indent}{'|---' if depth > 0 else ''}{node.name}")
+        for child in node.children:
+            print_directory_file(child, depth + 1, new_indent)
+
+def print_non_directory_file(node):
     pattern = r"\.txt$"
     if node:
         if re.search(pattern, node.name):
             print(node.name, ':')
             print(node.data)
-            print('---------------------------------------------------------------------')
-        for child in node.children:
-            print_text_file(child)
+        else:
+            print(node.name, ':')
+            print('Please use the compatible software to read the content')
+    else:
+        print("Can't find the file")
+
+def print_file(root_node, file_name):
+    nodes = []
+    find_node_by_name(nodes, root_node, file_name)
+    
+    if len(nodes) == 0:
+        print("Can't find the file")
+    else:
+        print("Found ", len(nodes), " files/folders")
+        print('----------------------------------------------------------------------------')
+        
+    for node in nodes:
+        if node:
+            if node.is_directory == True:
+                print_directory_file(node)
+            else:
+                print_non_directory_file(node)
+        else:
+            print("Can't find the file")
+        print('----------------------------------------------------------------------------')
+    
 
 
 #============================Main==================================
-disk_letter = "F"
+disk_letter = input('Enter disk letter: ')
 #Read VBR Data from disk
 vbr_data = read_vbr(disk_letter)
 #Detect file system
 fileSystemType = detect_filesystem_using_vbr(vbr_data)
 if (fileSystemType == 'NTFS'):
     print_VBR_info(vbr_data)
+    print('----------------------------------------------------------------------------')
     #Read MFT Data
     # Build the tree
     root_node = build_tree(5, 5, 0, 0, '.')
@@ -394,8 +489,11 @@ if (fileSystemType == 'NTFS'):
     # Print the tree
     print('File tree: ')
     print_tree(root_node)
-    print('Text file data: ')
-    print_text_file(root_node)
+    print('----------------------------------------------------------------------------')
+        
+    #print file
+    file_name = input('Enter file name: ')
+    print_file(root_node, file_name)
 else:
     print("\nNot NTFS")
 
