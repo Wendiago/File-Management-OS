@@ -492,9 +492,12 @@ if (fileSystemType == 'NTFS'):
     print('----------------------------------------------------------------------------')
         
     #print file
-    file_name = input('Enter file name: ')
-    print_file(root_node, file_name)
+    while True:
+        file_name = input('Enter file name: ')
+        if file_name == '0':
+            break
+        print_file(root_node, file_name)
 else:
     print("\nNot NTFS")
 
-print("")
+
