@@ -2,6 +2,7 @@ import os
 
 BYTE_P_SECTOR = 512
 
+
 def read_vbr(drive_letter):
     try:
         drive_path = fr'\\.\{drive_letter}:'
@@ -48,14 +49,13 @@ reversed =int.from_bytes(boot_sector_data[52:63],"little")
 physicalDrive = int.from_bytes(boot_sector_data[64:65],"little")
 reverved =int.from_bytes(boot_sector_data[65:66],"little")
 signature =int.from_bytes(boot_sector_data[66:67],"little")
-id = boot_sector_data[67:71].hex()
+id = int.from_bytes(boot_sector_data[67:71],'little')
 volumeLabel = boot_sector_data[71:82].decode("utf-8")
 systemID = boot_sector_data[82:90].decode("utf-8")
 
 # PRINT 
 print("\t ================ Information ==================")
 print("JMP Instruction:", ' '.join(['{:02X}'.format(byte) for byte in jmp]))
-print("JMP Instruction 2:", ' ',jmp)
 print("OEM Name:", OEM_ID)
 print("\n\t\tBIOS Parameter Block (BPB) Details:\n")
 print("Bytes Per Sector: ", bytesPerSector)

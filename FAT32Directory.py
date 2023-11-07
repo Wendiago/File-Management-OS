@@ -2,32 +2,12 @@ import os
 import datetime
 import struct
 
-firstAttr = {
-    1: 'D',
-    2: 'A'
-}
-
-secondAttr = {
-    1: 'R',
-    2: 'H',
-    3: 'RH',
-    4: 'S',
-    6: 'HS',
-    8: 'V'
-}
-
-app = {
-    ".mp4": "Windows Media Player",
-    ".mp3": "Windows Media Player"
-    "."
-}
-
 # Define column widths
 name_width = 25
-size_width = 20
-attribute_width = 25
-sector_width = 20
-
+size_width = 10
+attribute_width = 18
+sector_width = 10
+date_width = 30
 
 def byteToBits(value, start_index, bit_cnt):
     return (value & (2 ** start_index - 1)) >> (start_index - bit_cnt)
@@ -72,55 +52,56 @@ def read_vbr(drive_path):
         print("Error: Permission denied. Run the script with appropriate privileges.")
 
 
-def print_infor_dir(dir_entry):
+def print_infor_dir(root_dir_offset, index, drive_path):
+    with open(drive_path, 'rb') as f:
+        f.seek(root_dir_offset)
+        sector = f.read(32)
+        while index:
+            root_dir_offset += 32
+            sector = f.read(32)
+            index = index - 1
     # Name and extension:
     # Attributes
-    READ_ONLY = dir_entry[11] >> 0 & 1
-    HIDDEN = dir_entry[11] >> 1 & 1
-    SYSTEM = dir_entry[11] >> 2 & 1
-    VOLUME = dir_entry[11] >> 3 & 1
-    DIRECTORY = dir_entry[11] >> 4 & 1
-    ARCHIVE = dir_entry[11] >> 5 & 1
+        READ_ONLY = sector[11] >> 0 & 1
+        HIDDEN = sector[11] >> 1 & 1
+        SYSTEM = sector[11] >> 2 & 1
+        VOLUME = sector[11] >> 3 & 1
+        DIRECTORY = sector[11] >> 4 & 1
+        ARCHIVE = sector[11] >> 5 & 1
 
-    # TIME
-    # Created time
-    created_tenth_of_second = int.from_bytes(dir_entry[13:14], 'little')
-    created_time = int.from_bytes(dir_entry[14:16], 'little')
-    created_date = int.from_bytes(dir_entry[16:18], byteorder='little')
-    if created_date != 0 and created_time != 0 and created_tenth_of_second != 0:
-        created_time = getDateTimeFromDosTime(
-            created_date, created_time, created_tenth_of_second)
+        # TIME
+        # Created time
+        created_tenth_of_second = int.from_bytes(sector[13:14], 'little')
+        created_time = int.from_bytes(sector[14:16], 'little')
+        created_date = int.from_bytes(sector[16:18], byteorder='little')
+        if created_date != 0 and created_time != 0 and created_tenth_of_second != 0:
+            created_time = getDateTimeFromDosTime(
+                created_date, created_time, created_tenth_of_second)
 
-    # Access time
-    lastAccess = int.from_bytes(dir_entry[18:22], 'little')
-    if lastAccess != 0:
-        lastAccess = getDateTimeFromDosTime(lastAccess, 0, 0)
+        # Access time
+        lastAccess = int.from_bytes(sector[18:22], 'little')
+        if lastAccess != 0:
+            lastAccess = getDateTimeFromDosTime(lastAccess, 0, 0)
 
-    # Modified time
-    modifiedTime = int.from_bytes(dir_entry[22:24], 'little')
-    modifiedDate = int.from_bytes(dir_entry[24:26], 'little')
-    if modifiedDate != 0 and modifiedTime != 0:
-        modifiedDate = getDateTimeFromDosTime(modifiedDate, modifiedTime, 0)
-    # Print the attributes
-    print("***********************************************")
-    print("Attributes:\t")
-    print(f"\tREAD_ONLY: {READ_ONLY}")
-    print(f"\tHIDDEN: {HIDDEN}")
-    print(f"\tSYSTEM: {SYSTEM}")
-    print(f"\tVOLUME: {VOLUME}")
-    print(f"\tDIRECTORY: {DIRECTORY}")
-    print(f"\tARCHIVE: {ARCHIVE}")
-    print(f"Created Time: {created_time}")
-    print(f"Last Access: {lastAccess}")
-    print(f"Modified Date: {modifiedDate}")
-
-
-def print_the_header_row(root_cluster, drive_path):
-    root_dir_offset = find_root_dir_offset(root_cluster)
-    with open(drive_path, 'rb') as f1:
-        f1.seek(root_dir_offset)
-        sector1 = f1.read(32)
-        print_infor_dir(sector1)
+        # Modified time
+        modifiedTime = int.from_bytes(sector[22:24], 'little')
+        modifiedDate = int.from_bytes(sector[24:26], 'little')
+        if modifiedDate != 0 and modifiedTime != 0:
+            modifiedDate = getDateTimeFromDosTime(
+                modifiedDate, modifiedTime, 0)
+            
+        # Print the attributes
+        print("***********************************************")
+        print("Attributes:\t")
+        print(f"\tREAD_ONLY: {READ_ONLY}")
+        print(f"\tHIDDEN: {HIDDEN}")
+        print(f"\tSYSTEM: {SYSTEM}")
+        print(f"\tVOLUME: {VOLUME}")
+        print(f"\tDIRECTORY: {DIRECTORY}")
+        print(f"\tARCHIVE: {ARCHIVE}")
+        print(f"Created Time: {created_time}")
+        print(f"Last Access: {lastAccess}")
+        print(f"Modified Date: {modifiedDate}")
 
 
 def find_root_dir_offset(root_cluster):
@@ -178,10 +159,38 @@ def build_folder_tree(root_cluster, drive_path):
                             0x01, 0x41] else main_entry_name
                     else:
                         attribute = ''
-                        if dir_entry[11] % 16 != 0:
-                            attribute = secondAttr[dir_entry[11] % 16]
-                        if (dir_entry[11] // 16) % 16 != 0:
-                            attribute += firstAttr[(dir_entry[11] // 16) % 16]
+                        if dir_entry[11] & 0x01:
+                            attribute += 'R'
+                        if dir_entry[11] & 0x02:
+                            attribute += 'H'
+                        if dir_entry[11] & 0x04:
+                            attribute += 'S'
+                        if dir_entry[11] & 0x08:
+                            attribute += 'V'
+                        if dir_entry[11] & 0x10:
+                            attribute += 'D'
+                        if dir_entry[11] & 0x20:
+                            attribute += 'A'
+
+                        created_tenth_of_second = int.from_bytes(dir_entry[13:14], 'little')
+                        created_time = int.from_bytes(dir_entry[14:16], 'little')
+                        created_date = int.from_bytes(dir_entry[16:18], byteorder='little')
+                        if created_date != 0 and created_time != 0 and created_tenth_of_second != 0:
+                            created_time = getDateTimeFromDosTime(
+                                created_date, created_time, created_tenth_of_second)
+
+                        # Access time
+                        lastAccess = int.from_bytes(dir_entry[18:22], 'little')
+                        if lastAccess != 0:
+                            lastAccess = getDateTimeFromDosTime(lastAccess, 0, 0)
+
+                        # Modified time
+                        modifiedTime = int.from_bytes(dir_entry[22:24], 'little')
+                        modifiedDate = int.from_bytes(dir_entry[24:26], 'little')
+                        if modifiedDate != 0 and modifiedTime != 0:
+                            modifiedDate = getDateTimeFromDosTime(
+                                modifiedDate, modifiedTime, 0)
+
 
                         if len(main_entry_name) > 0:
                             main_entry_name = main_entry_name[:len(
@@ -193,7 +202,14 @@ def build_folder_tree(root_cluster, drive_path):
                                 "firstCluster": root_cluster,
                                 "size": size,
                                 "attribute": attribute,
-                                "sector": sectorID
+                                "sector": sectorID,
+                                "offset": {
+                                    "index": i / 32,
+                                    "root": root_dir_offset
+                                },
+                                "created_time" : created_time,
+                                "lastAccess": lastAccess,
+                                "modifiedDate": modifiedDate
                             }
                             main_entry_name = ""
                         else:
@@ -211,14 +227,22 @@ def build_folder_tree(root_cluster, drive_path):
                                 "firstCluster": root_cluster,
                                 "size": size,
                                 "attribute": attribute,
-                                "sector": sectorID
+                                "sector": sectorID,
+                                "offset": {
+                                    "index": i / 32,
+                                    "root": root_dir_offset
+                                },
+                                "created_time" : created_time,
+                                "lastAccess": lastAccess,
+                                "modifiedDate": modifiedDate
                             }
+            root_dir_offset += 512
 
 
-def loop(name, root_cluster, drive_path):
+def loop(name, root_cluster, drive_path, offset):
     new_prompt = f"{name}:> "
     set_command_prompt(new_prompt)
-    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} SECTOR"
+    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} {'SECTOR':<{sector_width}} {'CREATED TIME':<{date_width}} {'LAST ACCESS':<{date_width}} {'MODIFIED DATE':<{date_width}}"
     folder_dict = build_folder_tree(root_cluster, drive_path)
     while True:
         command = input(new_prompt)
@@ -232,24 +256,28 @@ def loop(name, root_cluster, drive_path):
             print(f"Numbers of FATs: {num_fats}")
             print(f"Sectors per FAT: {sectors_per_fat}")
             print(f"Root cluster: {root_cluster}")
-            print_the_header_row(root_cluster, drive_path)
+            print_infor_dir(offset["root"], offset["index"], drive_path)
         if command.lower() == "list":
             print(header)
             for key in folder_dict:
                 sz = folder_dict[key]["size"]
                 attr = folder_dict[key]["attribute"]
                 st = folder_dict[key]["sector"]
-                line = f"\t{key:<{name_width}} {sz:<{size_width}} {attr:<{attribute_width}}{st:<{sector_width}}"
+                createTime = folder_dict[key]["created_time"]
+                lastAccess = folder_dict[key]["lastAccess"]
+                modifiedDate = folder_dict[key]["modifiedDate"]
+                line = f"\t{key:<{name_width}} {sz:<{size_width}} {attr:<{attribute_width}} {st:<{sector_width}} {str(createTime) :<{date_width}} {str(lastAccess) :<{date_width}} {str(modifiedDate) :<{date_width}}"
                 print(line)
 
         if command in folder_dict:
-            if (command.endswith(".TXT") or command.endswith(".txt")) and folder_dict[command]["attribute"].endswith("A"):
+            if (command.endswith(".TXT") or command.endswith(".txt")) and 'A' in folder_dict[command]["attribute"]:
                 print_txt_File(
                     folder_dict[command]["firstCluster"], drive_path, folder_dict[command]["size"])
-            elif folder_dict[command]["attribute"].endswith("D"):
-                loop(command, folder_dict[command]["firstCluster"], drive_path)
+            elif 'D' not in folder_dict[command]["attribute"] and ".TXT" not in command.upper():
+                print("\tSử dụng ứng dụng khác")
             else:
-                print("\fDùng phần mềm tương thích please.")
+                loop(command, folder_dict[command]["firstCluster"],
+                    drive_path, folder_dict[command]["offset"])
 
 
 def start_program():
@@ -273,8 +301,8 @@ def start_program():
 
     new_prompt = f"{name}:> "
     set_command_prompt(new_prompt)
-
-    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} SECTOR"
+    # "lastAccess": lastAccess,"modifiedDate": modifiedDate
+    header = f"\t{'NAME':<{name_width}} {'SIZE':<{size_width}} {'ATTRIBUTE':<{attribute_width}} {'SECTOR':<{sector_width}} {'CREATED TIME':<{date_width}} {'LAST ACCESS':<{date_width}} {'MODIFIED DATE':<{date_width}}"
     folder_dict = build_folder_tree(root_cluster, drive_path)
 
     while True:
@@ -287,24 +315,29 @@ def start_program():
             print(f"Numbers of FATs: {num_fats}")
             print(f"Sectors per FAT: {sectors_per_fat}")
             print(f"Root cluster: {root_cluster}")
-            print_the_header_row(root_cluster, drive_path)
+            print_infor_dir(find_root_dir_offset(root_cluster), 0, drive_path)
         if command.lower() == "list":
             print(header)
             for key in folder_dict:
                 sz = folder_dict[key]["size"]
                 attr = folder_dict[key]["attribute"]
                 st = folder_dict[key]["sector"]
-                line = f"\t{key:<{name_width}} {sz:<{size_width}} {attr:<{attribute_width}}{st:<{sector_width}}"
+                createTime = folder_dict[key]["created_time"]
+                lastAccess = folder_dict[key]["lastAccess"]
+                modifiedDate = folder_dict[key]["modifiedDate"]
+                
+                line = f"\t{key:<{name_width}} {sz:<{size_width}} {attr:<{attribute_width}} {st:<{sector_width}} {str(createTime) :<{date_width}} {str(lastAccess) :<{date_width}} {str(modifiedDate) :<{date_width}}"
                 print(line)
 
         if command in folder_dict:
-            if (command.endswith(".TXT") or command.endswith(".txt")) and folder_dict[command]["attribute"].endswith("A"):
+            if (command.endswith(".TXT") or command.endswith(".txt")) and 'A' in folder_dict[command]["attribute"]:
                 print_txt_File(
                     folder_dict[command]["firstCluster"], drive_path, folder_dict[command]["size"])
-            elif folder_dict[command]["attribute"].endswith("D"):
-                loop(command, folder_dict[command]["firstCluster"], drive_path)
+            elif 'D' not in folder_dict[command]["attribute"] and ".TXT" not in command.upper():
+                print("\tSử dụng ứng dụng khác")
             else:
-                print("\fDùng phần mềm tương thích please.")
+                loop(command, folder_dict[command]["firstCluster"],
+                    drive_path, folder_dict[command]["offset"])
 
         if command.lower() == "exit":
             break
